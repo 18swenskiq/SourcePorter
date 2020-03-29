@@ -7,10 +7,16 @@ namespace SourcePorter
 {
     public class VPK_Reader
     {
-        private string VPKEXE_PATH = "\"H:\\SteamLibrary\\steamapps\\common\\Counter-Strike Global Offensive\\bin\\vpk.exe\"";
-        private string VPKDIR_PATH = "\"H:\\SteamLibrary\\steamapps\\common\\Counter-Strike Global Offensive\\csgo\\pak01_dir.vpk\"";
+        // TODO: make program auto find these paths(or just ask the user to input them since i'm not 100% sure how that'd work)
+        private string VPKEXE_PATH = $"\"{Program.Paths.vpk_exe}\"";
+        private string VPKDIR_PATH = $"\"{Program.Paths.pak_dir}\"";
         public Process proc;
         public List<string> VPK_OUTPUT;
+
+        // This is the value that the archive index for an entry is if it is actually stored in the dir VPK. 
+        // Hexadecimal for this is 0x7FFF
+        public static ushort preloadIndex = 32767;
+
         public VPK_Reader()
         {
             string arguments = $"l {VPKDIR_PATH}";
@@ -40,9 +46,11 @@ namespace SourcePorter
             foreach (var material in materials)
             {
                 var fulldirmaterial = "materials/" + material + ".vmt";
+                
                 if (VPK_OUTPUT.Contains(fulldirmaterial))
                 {
                     materialsUsed.Add(fulldirmaterial);
+                    Console.WriteLine(fulldirmaterial);
                 }
             }
             return materialsUsed;
@@ -61,17 +69,22 @@ namespace SourcePorter
             return modelsUsed;
         }
 
+        VPK_Extractor vpk_extractor = new VPK_Extractor(Program.Paths.pak_dir);
+
         public void GrabMaterialsFromVPK(List<string> materials)
         {
-            var vpk_extractor = new VPK_Extractor("H:\\SteamLibrary\\steamapps\\common\\Counter-Strike Global Offensive\\csgo\\pak01_dir.vpk");
             foreach(var entry in vpk_extractor.VPKEntries)
             {
+
                 var entrystring = $"{entry.DirectoryPath}/{entry.FileName}.{entry.FileExtension}";
+
                 if(!materials.Contains(entrystring))
                 {
                     continue;
                 }
+
                 string digits = "";
+
                 if(entry.InfoEntry.ArchiveIndex < 100)
                 {
                     if(entry.InfoEntry.ArchiveIndex < 10)
@@ -83,18 +96,69 @@ namespace SourcePorter
                         digits = "0";
                     }
                 }
-                string filepath = $"H:\\SteamLibrary\\steamapps\\common\\Counter-Strike Global Offensive\\csgo\\pak01_{digits}{entry.InfoEntry.ArchiveIndex}.vpk";
-                using (BinaryReader reader = new BinaryReader(File.Open(filepath, FileMode.Open)))
+
+                string filepath = $"{Program.Paths.game_path}\\pak01_{digits}{entry.InfoEntry.ArchiveIndex}.vpk";
+
+                bool isPreload = false;
+
+                // If the archive index is the preloadIndex, that means that this entry is preloaded into the dir and is not in an external VPK.
+                if (entry.InfoEntry.ArchiveIndex == preloadIndex || entry.InfoEntry.PreloadBytes > 0)
                 {
-                    reader.ReadBytes((int)entry.InfoEntry.EntryOffset);
-                    var filedata = reader.ReadBytes((int)entry.InfoEntry.EntryLength);
-                    Directory.CreateDirectory($"C:\\Users\\Quinton\\source\\repos\\SourcePorter\\SourcePorter\\bin\\Debug\\netcoreapp3.0\\source2\\{entry.DirectoryPath}");
-                    File.WriteAllBytes($"C:\\Users\\Quinton\\source\\repos\\SourcePorter\\SourcePorter\\bin\\Debug\\netcoreapp3.0\\source2\\{entry.DirectoryPath}\\{entry.FileName}.{entry.FileExtension}", filedata);
+                    filepath = $"{Program.Paths.pak_dir}";
+                    isPreload = true;
+                }
+                    
+                // If part of the file is stored in the dir and part is stored in another VPK, append the part stored in the external VPK to the end.
+                if (entry.InfoEntry.ArchiveIndex != preloadIndex && entry.InfoEntry.PreloadBytes > 0)
+                {
+                    string vpkpath = $"{Program.Paths.game_path}\\pak01_{digits}{entry.InfoEntry.ArchiveIndex}.vpk";
+                    using (BinaryReader reader = new BinaryReader(File.Open(vpkpath, FileMode.Open, FileAccess.Read, FileShare.Read)))
+                    {
+                        reader.BaseStream.Position = entry.InfoEntry.EntryOffset;
+
+                        byte[] fileContents = reader.ReadBytes((int)entry.InfoEntry.EntryLength);
+
+                        List<byte> list = new List<byte>(entry.InfoEntry.PreLoadData);
+
+                        foreach(byte b in fileContents)
+                        {
+                            list.Add(b);
+                        }
+
+                        entry.InfoEntry.PreLoadData = list.ToArray();
+
+                        reader.Dispose();
+                    }
+                }
+
+                using (BinaryReader reader = new BinaryReader(File.Open(filepath, FileMode.Open, FileAccess.Read, FileShare.Read)))
+                {
+                    reader.BaseStream.Position = entry.InfoEntry.EntryOffset;
+
+                    // If file is stored in external VPK and not as a preload in the dir file, use entrylength. Otherwise use PreloadBytes.
+                    if (!isPreload)
+                    {
+                        Directory.CreateDirectory($"source2\\{entry.DirectoryPath}");
+                        
+                        byte[] fileContents = reader.ReadBytes((int)entry.InfoEntry.EntryLength);
+                        File.WriteAllBytes($"source2\\{entry.DirectoryPath}\\{entry.FileName}.{entry.FileExtension}", fileContents);
+
+                        reader.Dispose();
+                    }
+                    else
+                    {
+                        Directory.CreateDirectory($"source2\\{entry.DirectoryPath}");
+                        File.WriteAllBytes($"source2\\{entry.DirectoryPath}\\{entry.FileName}.{entry.FileExtension}", entry.InfoEntry.PreLoadData);
+                        reader.Dispose();
+                    }
                 }
             }
         }
 
+        public void GrabTexturesFromMaterials()
+        {
 
+        }
 
     }
 
@@ -102,7 +166,6 @@ namespace SourcePorter
     {
         public VPK_Extractor(string vpkfile)
         {
-
             using (BinaryReader reader = new BinaryReader(File.Open(vpkfile, FileMode.Open)))
             {
                 Signature = reader.ReadUInt32();
@@ -135,32 +198,41 @@ namespace SourcePorter
 
         public bool ReadDirectory(BinaryReader reader)
         {
-            while (true)
+            // Top level of the tree. This reads file extensions.
+            while(true)
             {
-                string extension = ReadString(reader);
-                if (extension == "\0")
+                string fileExtension = ReadString(reader);
+
+                if (fileExtension == string.Empty)
                 {
-                    continue;
+                    break;
                 }
-                while (true)
+
+                // Second level of the tree. This level contains all the file directories that are of the above file extension.
+                while(true)
                 {
-                    string myPath = ReadString(reader);
-                    if (myPath == "\0")
+                    string fileDir = ReadString(reader);
+
+                    if (fileDir == string.Empty)
                     {
                         break;
                     }
-                    while (true)
+
+                    // Third level of the tree. This level contains all the file information needed for the above file directory.
+                    while(true)
                     {
-                        string myFileName = ReadString(reader);
-                        if (myFileName == "\0")
+                        string fileName = ReadString(reader);
+
+                        if (fileName == string.Empty)
                         {
                             break;
                         }
-                        var newpiece = new VPKEntryPiece
+
+                        var entry = new VPKEntryPiece
                         {
-                            DirectoryPath = myPath,
-                            FileExtension = extension,
-                            FileName = myFileName,
+                            DirectoryPath = fileDir,
+                            FileExtension = fileExtension,
+                            FileName = fileName,
                             InfoEntry = new VPKDirectoryEntry
                             {
                                 CRC = reader.ReadUInt32(),
@@ -168,15 +240,43 @@ namespace SourcePorter
                                 ArchiveIndex = reader.ReadUInt16(),
                                 EntryOffset = reader.ReadUInt32(),
                                 EntryLength = reader.ReadUInt32(),
-                                Terminator = reader.ReadUInt16()
+                                Terminator = reader.ReadUInt16(),
+                                PreLoadData = new byte[0]
                             }
                         };
-                        VPKEntries.Add(newpiece);
+                        VPKEntries.Add(entry);
+
+                        //if (entry.InfoEntry.ArchiveIndex != VPK_Reader.preloadIndex)
+                        if(false)
+                        Console.WriteLine($"{entry.InfoEntry.CRC}__" +
+                            $"{entry.InfoEntry.PreloadBytes}__" +
+                            $"{entry.InfoEntry.ArchiveIndex}[{entry.InfoEntry.ArchiveIndex.ToString("X")}]__" +
+                            $"{entry.InfoEntry.EntryOffset}__" +
+                            $"{entry.InfoEntry.EntryLength}__" +
+                            $"{entry.InfoEntry.Terminator} || " +
+                            $"{ entry.DirectoryPath}/{ entry.FileName}.{ entry.FileExtension}");
+
+                        // According to VDC, if ArchiveIndex = 0x7fff(which is 32767 as a ushort), the preload of the file is contained in the dir.
+                        // Meaning the file is in this file and not another vpk.
+                        // After it determines that, it moves the binary reader past the preload bytes.
+                        if (entry.InfoEntry.ArchiveIndex == 32767 || entry.InfoEntry.PreloadBytes != 0)
+                        {
+                            entry.InfoEntry.PreLoadData = reader.ReadBytes(entry.InfoEntry.PreloadBytes);
+                        }
+                        else
+                        {
+                            
+                        }
                     }
                 }
-                if (VPKEntries.Count == 71315) break;
 
+                if (fileExtension == string.Empty)
+                {
+                    break;
+                }
             }
+            
+
             return false;
         }
 
@@ -186,6 +286,7 @@ namespace SourcePorter
             while (true)
             {
                 char mychar = reader.ReadChar();
+                
                 if(mychar == '\0')
                 {
                     return mystring;
@@ -204,6 +305,10 @@ namespace SourcePorter
         public uint EntryOffset { get; set; }
         public uint EntryLength { get; set; }
         public ushort Terminator { get; set; }
+
+        public byte[] PreLoadData { get; set; }
+
+        public byte[] ArchiveData { get; set; }
     }
 
     public class VPKEntryPiece

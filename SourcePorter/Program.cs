@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using SourcePorter.Structs;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -9,11 +11,38 @@ namespace SourcePorter
 {
     class Program
     {
+        // Static variables ooOOooOO scary
+        // What are you gonna do, cry
+        // Piss your pants maybe
+
+        // This contains all paths needed, loaded from the local file "paths.json"
+        public static JSONPaths Paths { get; set; }
+
         static void Main(string[] args)
         {
+            Console.WriteLine("Squidski's Source 1 -> Source 2 Project Environment Creator");
+
+            // Create json if it doesn't exist, and load json into memory if it does.
+            JSONInit();
+
+            // If any of the paths in paths.json are invalid, stop the program.
+            if (!File.Exists(Paths.game_info) || 
+                !Directory.Exists(Paths.game_path) || 
+                !Directory.Exists(Paths.main_path) || 
+                !File.Exists(Paths.pak_dir) || 
+                !File.Exists(Paths.vpk_exe))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("One or more of the paths in paths.json are invalid!");
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.ReadKey();
+
+                // Close. Environment.Exit(0) also tells the operating system the program was closed normally and didn't just crash.
+                Environment.Exit(0);
+            }
+
             Stopwatch stopWatch = new Stopwatch();
             stopWatch.Start();
-            Console.WriteLine("Squidski's Source 1 -> Source 2 Project Environment Creator");
 
             if(args.Length < 1)
             {
@@ -104,6 +133,27 @@ namespace SourcePorter
             TimeSpan ts = stopWatch.Elapsed;
             Console.WriteLine($"Completed in {ts.Seconds}.{ts.Milliseconds} seconds");
             Console.ReadKey();
+        }
+
+        // Creates "paths.json" file if it is not created and fills it will empty strings which will make the program fail until you manually input the paths
+        // Then creates a JSONPaths object from the current paths.json and sets the Paths variable to it.
+        public static void JSONInit()
+        {
+            // If file doesn't exist, create default paths.json
+            if (!File.Exists("paths.json"))
+            {
+                JSONPaths paths = new JSONPaths();
+
+                string fileText = JsonConvert.SerializeObject(paths, Formatting.Indented);
+
+                File.WriteAllText("paths.json", fileText);
+
+                Paths = paths;
+            }
+            else
+            {
+                Paths = JsonConvert.DeserializeObject<JSONPaths>(File.ReadAllText("paths.json"));
+            }
         }
 
         static List<string> GetListDifference(List<string> List1, List<string> List2, bool isMaterials = false)

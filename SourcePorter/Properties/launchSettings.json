@@ -2,7 +2,7 @@
   "profiles": {
     "SourcePorter": {
       "commandName": "Project",
-      "commandLineArgs": "\"H:\\DriveBackup\\Gongji\\map_versions\\de_gongji.vmf\""
+      "commandLineArgs": "\"D:\\SteamGames\\steamapps\\common\\Counter-Strike Global Offensive\\sdk_content\\maps\\waterworksdecortest\\05\\de_waterworks_test.vmf\""
     }
   }
 }

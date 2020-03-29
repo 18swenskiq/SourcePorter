@@ -13,7 +13,7 @@ namespace SourcePorter
 
         public GameInfo()
         {
-            var gameinfoFile = File.ReadAllLines(@"H:\SteamLibrary\steamapps\common\Counter-Strike Global Offensive\csgo\gameinfo.txt");
+            var gameinfoFile = File.ReadAllLines(Program.Paths.game_info);
             var gameinfoLines = new List<string>(gameinfoFile);
             bool searchPathFlag = false;
             var searchpaths = new List<string>();
@@ -47,7 +47,7 @@ namespace SourcePorter
                     }
                 }
             }
-            searchpaths.Add("H:\\SteamLibrary\\steamapps\\common\\Counter-Strike Global Offensive\\csgo");
+            searchpaths.Add(Program.Paths.game_path);
             SearchPaths = searchpaths;
 
         }
