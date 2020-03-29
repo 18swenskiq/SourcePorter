@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Gameloop.Vdf;
+using Gameloop.Vdf.Linq;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -71,8 +73,9 @@ namespace SourcePorter
 
         VPK_Extractor vpk_extractor = new VPK_Extractor(Program.Paths.pak_dir);
 
-        public void GrabMaterialsFromVPK(List<string> materials)
+        public int GrabMaterialsFromVPK(List<string> materials)
         {
+            int meterialsExtracted = 0;
             foreach(var entry in vpk_extractor.VPKEntries)
             {
 
@@ -142,22 +145,33 @@ namespace SourcePorter
                         
                         byte[] fileContents = reader.ReadBytes((int)entry.InfoEntry.EntryLength);
                         File.WriteAllBytes($"source2\\{entry.DirectoryPath}\\{entry.FileName}.{entry.FileExtension}", fileContents);
-
+                        meterialsExtracted++;
                         reader.Dispose();
                     }
                     else
                     {
                         Directory.CreateDirectory($"source2\\{entry.DirectoryPath}");
                         File.WriteAllBytes($"source2\\{entry.DirectoryPath}\\{entry.FileName}.{entry.FileExtension}", entry.InfoEntry.PreLoadData);
+                        meterialsExtracted++;
                         reader.Dispose();
                     }
                 }
             }
+
+            return meterialsExtracted;
         }
 
         public void GrabTexturesFromMaterials()
         {
+            VProperty currentVmt = VdfConvert.Deserialize(File.ReadAllText("graygrid.vmt"));
+            
 
+            foreach(VToken token in currentVmt.Value)
+            {
+                Console.WriteLine(token.Value<VProperty>().Key);
+
+                // Check if the value of this field is a texture in the VPK
+            }
         }
 
     }

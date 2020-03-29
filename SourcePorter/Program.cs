@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using VMFParser;
+using VMTParser;
 
 namespace SourcePorter
 {
@@ -127,7 +128,11 @@ namespace SourcePorter
 
 
             Console.WriteLine("Getting materials from VPK");
-            vpk.GrabMaterialsFromVPK(S1materialsInVPKNoModels);
+            int materialsExtracted = vpk.GrabMaterialsFromVPK(S1materialsInVPKNoModels);
+            Console.WriteLine($"{materialsExtracted} materials extracted successfully!");
+
+            Console.WriteLine("Getting textures from materials");
+            vpk.GrabTexturesFromMaterials();
 
             stopWatch.Stop();
             TimeSpan ts = stopWatch.Elapsed;
